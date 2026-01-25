@@ -11,11 +11,17 @@ A formatter for `go.mod` files that sorts and organizes directives.
 
 ## Installation
 
+**Homebrew:**
+
+```bash
+brew install albertocavalcante/tap/gomodfmt
+```
+
+**Go:**
+
 ```bash
 go install github.com/albertocavalcante/gomodfmt/cmd/gomodfmt@latest
 ```
-
-Requires Go 1.24+.
 
 ## Usage
 
