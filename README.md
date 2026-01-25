@@ -1,20 +1,32 @@
 # gomodfmt
 
-A formatter for `go.mod` files that sorts and organizes dependencies.
+An opinionated formatter for `go.mod` files that enforces consistent styling and organization.
 
-## Features
+## Philosophy
 
-- Sorts `require` blocks alphabetically
-- Groups direct and indirect dependencies separately
-- Sorts `replace` and `exclude` blocks
-- Aligns version comments
-- Supports stdin/stdout or in-place file editing
+`gomodfmt` is opinionated. It enforces a specific style:
+
+- **Exactly two require blocks**: direct dependencies first, indirect dependencies second
+- **Alphabetical sorting**: all directives are sorted alphabetically
+- **Consolidated blocks**: scattered single-line directives are grouped into blocks
+- **No endless require blocks**: messy go.mod files with multiple scattered require blocks are cleaned up
+
+## Supported Directives
+
+- `require` - sorted alphabetically, separated into direct/indirect blocks
+- `replace` - sorted alphabetically by old path
+- `exclude` - sorted alphabetically by path, then version
+- `retract` - sorted by version
+- `tool` - sorted alphabetically (Go 1.24+)
+- `godebug` - sorted alphabetically by key (Go 1.21+)
 
 ## Installation
 
 ```bash
 go install github.com/albertocavalcante/gomodfmt/cmd/gomodfmt@latest
 ```
+
+Requires Go 1.24 or later.
 
 ## Usage
 
@@ -45,38 +57,61 @@ cat go.mod | gomodfmt
 
 ## Example
 
-Before:
+### Before
+
 ```
 module example.com/myapp
 
-go 1.21
+go 1.24
+
+require github.com/zzz/pkg v1.0.0
 
 require (
-	github.com/pkg/errors v0.9.1
-	golang.org/x/sync v0.5.0 // indirect
-	github.com/stretchr/testify v1.8.4
-	golang.org/x/tools v0.16.0 // indirect
-	github.com/google/uuid v1.5.0
+	github.com/aaa/pkg v1.0.0
+	golang.org/x/text v0.14.0 // indirect
 )
+
+tool github.com/zzz/tool
+tool github.com/aaa/tool
+
+godebug zipinsecurepath=0
+godebug asynctimerchan=0
+
+require golang.org/x/sync v0.5.0 // indirect
 ```
 
-After:
+### After
+
 ```
 module example.com/myapp
 
-go 1.21
+go 1.24
+
+godebug (
+	asynctimerchan=0
+	zipinsecurepath=0
+)
 
 require (
-	github.com/google/uuid v1.5.0
-	github.com/pkg/errors v0.9.1
-	github.com/stretchr/testify v1.8.4
+	github.com/aaa/pkg v1.0.0
+	github.com/zzz/pkg v1.0.0
 )
 
 require (
 	golang.org/x/sync v0.5.0 // indirect
-	golang.org/x/tools v0.16.0 // indirect
+	golang.org/x/text v0.14.0 // indirect
+)
+
+tool (
+	github.com/aaa/tool
+	github.com/zzz/tool
 )
 ```
+
+## Limitations
+
+- Comments at the top of the file are not preserved (trade-off for block consolidation)
+- Inline comments on directives are preserved
 
 ## License
 

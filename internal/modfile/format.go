@@ -10,119 +10,96 @@ import (
 	"golang.org/x/mod/module"
 )
 
-// Format formats a go.mod file by:
-// - Sorting require blocks alphabetically
-// - Grouping direct and indirect dependencies separately
-// - Aligning version comments
+// Format formats a go.mod file with opinionated styling:
+// - Exactly two require blocks: direct deps first, indirect deps second
+// - All directive types sorted alphabetically
+// - Consolidated blocks (no scattered single-line directives)
 func Format(data []byte) ([]byte, error) {
 	f, err := modfile.Parse("go.mod", data, nil)
 	if err != nil {
 		return nil, fmt.Errorf("parsing go.mod: %w", err)
 	}
 
-	// Collect all requires
-	type req struct {
-		path     string
-		version  string
-		indirect bool
-	}
-	var requires []req
-	for _, r := range f.Require {
-		requires = append(requires, req{
-			path:     r.Mod.Path,
-			version:  r.Mod.Version,
-			indirect: r.Indirect,
-		})
+	// Extract all data first
+	extracted := extractData(f)
+
+	// Create a fresh go.mod with just module and go version
+	newData := []byte(fmt.Sprintf("module %s\n\ngo %s\n", f.Module.Mod.Path, f.Go.Version))
+	if f.Toolchain != nil {
+		newData = []byte(fmt.Sprintf("module %s\n\ngo %s\n\ntoolchain %s\n", f.Module.Mod.Path, f.Go.Version, f.Toolchain.Name))
 	}
 
-	// Sort: direct first, then alphabetically
-	sort.Slice(requires, func(i, j int) bool {
-		if requires[i].indirect != requires[j].indirect {
-			return !requires[i].indirect
+	newFile, err := modfile.Parse("go.mod", newData, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating new go.mod: %w", err)
+	}
+
+	// Add godebug (sorted)
+	sort.Slice(extracted.godebugs, func(i, j int) bool {
+		return extracted.godebugs[i].key < extracted.godebugs[j].key
+	})
+	for _, g := range extracted.godebugs {
+		newFile.AddGodebug(g.key, g.value)
+	}
+
+	// Add requires using SetRequireSeparateIndirect for proper block separation
+	sort.Slice(extracted.requires, func(i, j int) bool {
+		if extracted.requires[i].indirect != extracted.requires[j].indirect {
+			return !extracted.requires[i].indirect
 		}
-		return requires[i].path < requires[j].path
+		return extracted.requires[i].path < extracted.requires[j].path
 	})
-
-	// Collect all replaces
-	type repl struct {
-		oldPath    string
-		oldVersion string
-		newPath    string
-		newVersion string
-	}
-	var replaces []repl
-	for _, r := range f.Replace {
-		replaces = append(replaces, repl{
-			oldPath:    r.Old.Path,
-			oldVersion: r.Old.Version,
-			newPath:    r.New.Path,
-			newVersion: r.New.Version,
-		})
-	}
-
-	// Sort replaces alphabetically by old path
-	sort.Slice(replaces, func(i, j int) bool {
-		return replaces[i].oldPath < replaces[j].oldPath
-	})
-
-	// Collect all excludes
-	type excl struct {
-		path    string
-		version string
-	}
-	var excludes []excl
-	for _, e := range f.Exclude {
-		excludes = append(excludes, excl{
-			path:    e.Mod.Path,
-			version: e.Mod.Version,
-		})
-	}
-
-	// Sort excludes
-	sort.Slice(excludes, func(i, j int) bool {
-		if excludes[i].path != excludes[j].path {
-			return excludes[i].path < excludes[j].path
-		}
-		return excludes[i].version < excludes[j].version
-	})
-
-	// Use SetRequire to properly set all requires in sorted order
 	var mods []*modfile.Require
-	for _, r := range requires {
+	for _, r := range extracted.requires {
 		mods = append(mods, &modfile.Require{
 			Mod:      module.Version{Path: r.path, Version: r.version},
 			Indirect: r.indirect,
 		})
 	}
-	f.SetRequire(mods)
+	newFile.SetRequireSeparateIndirect(mods)
 
-	// Drop all existing replaces and excludes
-	for _, r := range f.Replace {
-		f.DropReplace(r.Old.Path, r.Old.Version)
-	}
-	for _, e := range f.Exclude {
-		f.DropExclude(e.Mod.Path, e.Mod.Version)
-	}
-
-	// Re-add replaces in sorted order
-	for _, r := range replaces {
-		if err := f.AddReplace(r.oldPath, r.oldVersion, r.newPath, r.newVersion); err != nil {
-			return nil, fmt.Errorf("adding replace %s: %w", r.oldPath, err)
+	// Add replaces (sorted)
+	sort.Slice(extracted.replaces, func(i, j int) bool {
+		if extracted.replaces[i].oldPath != extracted.replaces[j].oldPath {
+			return extracted.replaces[i].oldPath < extracted.replaces[j].oldPath
 		}
+		return extracted.replaces[i].oldVersion < extracted.replaces[j].oldVersion
+	})
+	for _, r := range extracted.replaces {
+		newFile.AddReplace(r.oldPath, r.oldVersion, r.newPath, r.newVersion)
 	}
 
-	// Re-add excludes in sorted order
-	for _, e := range excludes {
-		if err := f.AddExclude(e.path, e.version); err != nil {
-			return nil, fmt.Errorf("adding exclude %s: %w", e.path, err)
+	// Add excludes (sorted)
+	sort.Slice(extracted.excludes, func(i, j int) bool {
+		if extracted.excludes[i].path != extracted.excludes[j].path {
+			return extracted.excludes[i].path < extracted.excludes[j].path
 		}
+		return extracted.excludes[i].version < extracted.excludes[j].version
+	})
+	for _, e := range extracted.excludes {
+		newFile.AddExclude(e.path, e.version)
 	}
 
-	// Clean up the syntax tree
-	f.Cleanup()
+	// Add retracts (sorted)
+	sort.Slice(extracted.retracts, func(i, j int) bool {
+		if extracted.retracts[i].low != extracted.retracts[j].low {
+			return extracted.retracts[i].low < extracted.retracts[j].low
+		}
+		return extracted.retracts[i].high < extracted.retracts[j].high
+	})
+	for _, r := range extracted.retracts {
+		newFile.AddRetract(modfile.VersionInterval{Low: r.low, High: r.high}, r.rationale)
+	}
 
-	// Format with proper alignment
-	formatted, err := f.Format()
+	// Add tools (sorted)
+	sort.Strings(extracted.tools)
+	for _, t := range extracted.tools {
+		newFile.AddTool(t)
+	}
+
+	newFile.Cleanup()
+
+	formatted, err := newFile.Format()
 	if err != nil {
 		return nil, fmt.Errorf("formatting go.mod: %w", err)
 	}
@@ -135,6 +112,67 @@ func Format(data []byte) ([]byte, error) {
 	return formatted, nil
 }
 
+type extractedData struct {
+	requires []struct {
+		path, version string
+		indirect      bool
+	}
+	replaces []struct {
+		oldPath, oldVersion, newPath, newVersion string
+	}
+	excludes []struct {
+		path, version string
+	}
+	tools    []string
+	godebugs []struct {
+		key, value string
+	}
+	retracts []struct {
+		low, high, rationale string
+	}
+}
+
+func extractData(f *modfile.File) extractedData {
+	var data extractedData
+
+	for _, r := range f.Require {
+		data.requires = append(data.requires, struct {
+			path, version string
+			indirect      bool
+		}{r.Mod.Path, r.Mod.Version, r.Indirect})
+	}
+
+	for _, r := range f.Replace {
+		data.replaces = append(data.replaces, struct {
+			oldPath, oldVersion, newPath, newVersion string
+		}{r.Old.Path, r.Old.Version, r.New.Path, r.New.Version})
+	}
+
+	for _, e := range f.Exclude {
+		data.excludes = append(data.excludes, struct {
+			path, version string
+		}{e.Mod.Path, e.Mod.Version})
+	}
+
+	for _, t := range f.Tool {
+		data.tools = append(data.tools, t.Path)
+	}
+
+	for _, g := range f.Godebug {
+		data.godebugs = append(data.godebugs, struct {
+			key, value string
+		}{g.Key, g.Value})
+	}
+
+	for _, r := range f.Retract {
+		data.retracts = append(data.retracts, struct {
+			low, high, rationale string
+		}{r.Low, r.High, r.Rationale})
+	}
+
+	return data
+}
+
 // Diff returns a unified diff between old and new content.
 func Diff(old, new []byte, filename string) ([]byte, error) {
 	oldLines := strings.Split(string(old), "\n")
@@ -144,7 +182,6 @@ func Diff(old, new []byte, filename string) ([]byte, error) {
 	fmt.Fprintf(&buf, "--- %s\n", filename)
 	fmt.Fprintf(&buf, "+++ %s\n", filename)
 
-	// Simple diff implementation
 	chunks := diffLines(oldLines, newLines)
 	for _, chunk := range chunks {
 		buf.WriteString(chunk)
@@ -153,11 +190,9 @@ func Diff(old, new []byte, filename string) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// diffLines creates a simple unified diff
 func diffLines(a, b []string) []string {
 	var result []string
 
-	// Find differences using a simple LCS-based approach
 	i, j := 0, 0
 	lineA, lineB := 1, 1
 	hunkStart := -1

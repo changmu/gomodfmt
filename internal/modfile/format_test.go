@@ -12,34 +12,35 @@ func TestFormat(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
+		// ==================== REQUIRE BLOCK TESTS ====================
 		{
-			name: "sorts require alphabetically",
+			name: "sorts require block alphabetically",
 			input: `module example.com/test
 
-go 1.21
+go 1.24
 
 require (
-	github.com/pkg/errors v0.9.1
-	github.com/google/uuid v1.5.0
-	github.com/aws/aws-sdk-go v1.50.0
+	github.com/zzz/pkg v1.0.0
+	github.com/aaa/pkg v1.0.0
+	github.com/mmm/pkg v1.0.0
 )
 `,
 			want: `module example.com/test
 
-go 1.21
+go 1.24
 
 require (
-	github.com/aws/aws-sdk-go v1.50.0
-	github.com/google/uuid v1.5.0
-	github.com/pkg/errors v0.9.1
+	github.com/aaa/pkg v1.0.0
+	github.com/mmm/pkg v1.0.0
+	github.com/zzz/pkg v1.0.0
 )
 `,
 		},
 		{
-			name: "sorts direct and indirect deps together alphabetically",
+			name: "separates direct and indirect into exactly two blocks",
 			input: `module example.com/test
 
-go 1.21
+go 1.24
 
 require (
 	github.com/pkg/errors v0.9.1
@@ -50,21 +51,199 @@ require (
 `,
 			want: `module example.com/test
 
-go 1.21
+go 1.24
 
 require (
 	github.com/google/uuid v1.5.0
 	github.com/pkg/errors v0.9.1
+)
+
+require (
 	golang.org/x/sync v0.5.0 // indirect
 	golang.org/x/tools v0.16.0 // indirect
 )
 `,
 		},
 		{
-			name: "sorts replace directives",
+			name: "consolidates multiple scattered require blocks into two",
 			input: `module example.com/test
 
-go 1.21
+go 1.24
+
+require github.com/zzz/pkg v1.0.0
+
+require (
+	github.com/aaa/pkg v1.0.0
+	golang.org/x/text v0.14.0 // indirect
+)
+
+require github.com/mmm/pkg v1.0.0
+
+require golang.org/x/sync v0.5.0 // indirect
+
+require (
+	github.com/bbb/pkg v1.0.0
+	golang.org/x/tools v0.16.0 // indirect
+)
+`,
+			want: `module example.com/test
+
+go 1.24
+
+require (
+	github.com/aaa/pkg v1.0.0
+	github.com/bbb/pkg v1.0.0
+	github.com/mmm/pkg v1.0.0
+	github.com/zzz/pkg v1.0.0
+)
+
+require (
+	golang.org/x/sync v0.5.0 // indirect
+	golang.org/x/text v0.14.0 // indirect
+	golang.org/x/tools v0.16.0 // indirect
+)
+`,
+		},
+		{
+			name: "handles only direct deps - single block",
+			input: `module example.com/test
+
+go 1.24
+
+require (
+	github.com/zzz/pkg v1.0.0
+	github.com/aaa/pkg v1.0.0
+)
+`,
+			want: `module example.com/test
+
+go 1.24
+
+require (
+	github.com/aaa/pkg v1.0.0
+	github.com/zzz/pkg v1.0.0
+)
+`,
+		},
+		{
+			name: "handles only indirect deps - single block",
+			input: `module example.com/test
+
+go 1.24
+
+require (
+	golang.org/x/sync v0.5.0 // indirect
+	golang.org/x/text v0.14.0 // indirect
+)
+`,
+			want: `module example.com/test
+
+go 1.24
+
+require (
+	golang.org/x/sync v0.5.0 // indirect
+	golang.org/x/text v0.14.0 // indirect
+)
+`,
+		},
+		{
+			name: "handles single require statement",
+			input: `module example.com/test
+
+go 1.24
+
+require github.com/google/uuid v1.5.0
+`,
+			want: `module example.com/test
+
+go 1.24
+
+require github.com/google/uuid v1.5.0
+`,
+		},
+
+		// ==================== TOOL DIRECTIVE TESTS ====================
+		{
+			name: "sorts tool directives alphabetically",
+			input: `module example.com/test
+
+go 1.24
+
+tool (
+	golang.org/x/tools/cmd/stringer
+	github.com/zzz/tool
+	github.com/aaa/tool
+)
+`,
+			want: `module example.com/test
+
+go 1.24
+
+tool (
+	github.com/aaa/tool
+	github.com/zzz/tool
+	golang.org/x/tools/cmd/stringer
+)
+`,
+		},
+		{
+			name: "consolidates scattered tool directives into one block",
+			input: `module example.com/test
+
+go 1.24
+
+tool github.com/zzz/tool
+
+tool (
+	github.com/mmm/tool
+	github.com/aaa/tool
+)
+
+tool github.com/bbb/tool
+`,
+			want: `module example.com/test
+
+go 1.24
+
+tool (
+	github.com/aaa/tool
+	github.com/bbb/tool
+	github.com/mmm/tool
+	github.com/zzz/tool
+)
+`,
+		},
+
+		// ==================== GODEBUG DIRECTIVE TESTS ====================
+		{
+			name: "sorts godebug directives alphabetically by key",
+			input: `module example.com/test
+
+go 1.24
+
+godebug zipinsecurepath=0
+godebug asynctimerchan=0
+godebug httplaxcontentlength=1
+`,
+			// Library groups into a block - that's fine
+			want: `module example.com/test
+
+go 1.24
+
+godebug (
+	asynctimerchan=0
+	httplaxcontentlength=1
+	zipinsecurepath=0
+)
+`,
+		},
+
+		// ==================== REPLACE DIRECTIVE TESTS ====================
+		{
+			name: "sorts replace directives alphabetically",
+			input: `module example.com/test
+
+go 1.24
 
 replace (
 	github.com/zzz/pkg => ../zzz
@@ -74,7 +253,7 @@ replace (
 `,
 			want: `module example.com/test
 
-go 1.21
+go 1.24
 
 replace github.com/aaa/pkg => ../aaa
 
@@ -84,10 +263,174 @@ replace github.com/zzz/pkg => ../zzz
 `,
 		},
 		{
-			name:    "handles invalid go.mod",
-			input:   "this is not a valid go.mod",
+			name: "sorts replace with versions",
+			input: `module example.com/test
+
+go 1.24
+
+replace (
+	github.com/zzz/pkg v1.0.0 => github.com/fork/zzz v1.0.1
+	github.com/aaa/pkg v0.9.0 => github.com/fork/aaa v0.9.1
+)
+`,
+			want: `module example.com/test
+
+go 1.24
+
+replace github.com/aaa/pkg v0.9.0 => github.com/fork/aaa v0.9.1
+
+replace github.com/zzz/pkg v1.0.0 => github.com/fork/zzz v1.0.1
+`,
+		},
+
+		// ==================== EXCLUDE DIRECTIVE TESTS ====================
+		{
+			name: "sorts exclude directives",
+			input: `module example.com/test
+
+go 1.24
+
+exclude (
+	github.com/zzz/pkg v1.0.0
+	github.com/aaa/pkg v1.0.0
+	github.com/aaa/pkg v0.9.0
+)
+`,
+			// Library groups excludes with same path together
+			want: `module example.com/test
+
+go 1.24
+
+exclude (
+	github.com/aaa/pkg v0.9.0
+	github.com/aaa/pkg v1.0.0
+)
+
+exclude github.com/zzz/pkg v1.0.0
+`,
+		},
+
+		// ==================== RETRACT DIRECTIVE TESTS ====================
+		{
+			name: "sorts retract directives",
+			input: `module example.com/test
+
+go 1.24
+
+retract v1.0.0
+retract v0.5.0
+retract [v0.1.0, v0.2.0]
+`,
+			// Library groups retracts
+			want: `module example.com/test
+
+go 1.24
+
+retract (
+	[v0.1.0, v0.2.0]
+	v0.5.0
+	v1.0.0
+)
+`,
+		},
+
+		// ==================== COMPLEX/COMBINED TESTS ====================
+		{
+			name: "formats complex go.mod with all directives",
+			input: `module example.com/myapp
+
+go 1.24
+
+toolchain go1.25.6
+
+godebug zipinsecurepath=0
+godebug asynctimerchan=0
+
+require github.com/zzz/pkg v1.0.0
+
+require (
+	github.com/aaa/pkg v1.0.0
+	golang.org/x/text v0.14.0 // indirect
+)
+
+tool github.com/zzz/tool
+tool github.com/aaa/tool
+
+replace github.com/zzz/pkg => ../zzz
+replace github.com/aaa/pkg => ../aaa
+
+exclude github.com/bad/pkg v0.0.1
+
+require golang.org/x/sync v0.5.0 // indirect
+`,
+			want: `module example.com/myapp
+
+go 1.24
+
+toolchain go1.25.6
+
+godebug (
+	asynctimerchan=0
+	zipinsecurepath=0
+)
+
+require (
+	github.com/aaa/pkg v1.0.0
+	github.com/zzz/pkg v1.0.0
+)
+
+require (
+	golang.org/x/sync v0.5.0 // indirect
+	golang.org/x/text v0.14.0 // indirect
+)
+
+replace github.com/aaa/pkg => ../aaa
+
+replace github.com/zzz/pkg => ../zzz
+
+exclude github.com/bad/pkg v0.0.1
+
+tool (
+	github.com/aaa/tool
+	github.com/zzz/tool
+)
+`,
+		},
+
+		// ==================== EDGE CASES ====================
+		{
+			name: "preserves module and go version",
+			input: `module github.com/example/myproject
+
+go 1.24
+
+toolchain go1.25.6
+`,
+			want: `module github.com/example/myproject
+
+go 1.24
+
+toolchain go1.25.6
+`,
+		},
+		{
+			name: "handles empty require block",
+			input: `module example.com/test
+
+go 1.24
+`,
+			want: `module example.com/test
+
+go 1.24
+`,
+		},
+		{
+			name:    "rejects invalid go.mod",
+			input:   "this is not a valid go.mod file",
 			wantErr: true,
 		},
+		// Note: Comments are not preserved when reformatting.
+		// This is a trade-off for the consolidation feature.
 	}
 
 	for _, tt := range tests {
@@ -100,29 +443,48 @@ replace github.com/zzz/pkg => ../zzz
 			if tt.wantErr {
 				return
 			}
-			if strings.TrimSpace(string(got)) != strings.TrimSpace(tt.want) {
-				t.Errorf("Format() =\n%s\nwant:\n%s", got, tt.want)
+			gotStr := strings.TrimSpace(string(got))
+			wantStr := strings.TrimSpace(tt.want)
+			if gotStr != wantStr {
+				t.Errorf("Format() mismatch:\n=== GOT ===\n%s\n=== WANT ===\n%s\n", gotStr, wantStr)
 			}
 		})
 	}
 }
 
-func TestFormat_PreservesModule(t *testing.T) {
-	input := `module github.com/example/myproject
+func TestFormat_Idempotent(t *testing.T) {
+	input := `module example.com/test
 
-go 1.22
+go 1.24
 
-require github.com/google/uuid v1.5.0
+toolchain go1.25.6
+
+godebug asynctimerchan=0
+
+require (
+	github.com/aaa/pkg v1.0.0
+	github.com/zzz/pkg v1.0.0
+)
+
+require golang.org/x/sync v0.5.0 // indirect
+
+replace github.com/old/pkg => github.com/new/pkg v1.0.0
+
+tool github.com/some/tool
 `
-	got, err := Format([]byte(input))
+	// Format once
+	first, err := Format([]byte(input))
 	if err != nil {
-		t.Fatalf("Format() error = %v", err)
+		t.Fatalf("First Format() error = %v", err)
 	}
 
-	if !strings.Contains(string(got), "module github.com/example/myproject") {
-		t.Error("Format() lost module declaration")
+	// Format again - should be identical
+	second, err := Format(first)
+	if err != nil {
+		t.Fatalf("Second Format() error = %v", err)
 	}
-	if !strings.Contains(string(got), "go 1.22") {
-		t.Error("Format() lost go version")
+
+	if string(first) != string(second) {
+		t.Errorf("Format() not idempotent:\n=== FIRST ===\n%s\n=== SECOND ===\n%s\n", first, second)
 	}
 }
