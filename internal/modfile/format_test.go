@@ -429,8 +429,217 @@ go 1.24
 			input:   "this is not a valid go.mod file",
 			wantErr: true,
 		},
-		// Note: Comments are not preserved when reformatting.
-		// This is a trade-off for the consolidation feature.
+
+		// ==================== COMMENT PRESERVATION TESTS ====================
+		{
+			name: "preserves module comment",
+			input: `// Package myapp provides utilities.
+module example.com/myapp
+
+go 1.24
+
+require github.com/google/uuid v1.5.0
+`,
+			want: `// Package myapp provides utilities.
+module example.com/myapp
+
+go 1.24
+
+require github.com/google/uuid v1.5.0
+`,
+		},
+		{
+			name: "preserves inline comments on requires",
+			input: `module example.com/test
+
+go 1.24
+
+require (
+	github.com/zzz/pkg v1.0.0 // needed for feature X
+	github.com/aaa/pkg v1.0.0 // core dependency
+)
+`,
+			want: `module example.com/test
+
+go 1.24
+
+require (
+	github.com/aaa/pkg v1.0.0 // core dependency
+	github.com/zzz/pkg v1.0.0 // needed for feature X
+)
+`,
+		},
+		{
+			name: "preserves block comments before require sections",
+			input: `module example.com/test
+
+go 1.24
+
+// Direct dependencies
+require (
+	github.com/zzz/pkg v1.0.0
+	github.com/aaa/pkg v1.0.0
+)
+`,
+			want: `module example.com/test
+
+go 1.24
+
+// Direct dependencies
+require (
+	github.com/aaa/pkg v1.0.0
+	github.com/zzz/pkg v1.0.0
+)
+`,
+		},
+		{
+			name: "preserves comments on replace directives",
+			input: `module example.com/test
+
+go 1.24
+
+// Use local development version
+replace github.com/some/pkg => ../local-pkg
+`,
+			want: `module example.com/test
+
+go 1.24
+
+// Use local development version
+replace github.com/some/pkg => ../local-pkg
+`,
+		},
+		{
+			name: "preserves inline comments on replace directives",
+			input: `module example.com/test
+
+go 1.24
+
+replace (
+	github.com/zzz/pkg => ../zzz // local dev
+	github.com/aaa/pkg => ../aaa // fork
+)
+`,
+			want: `module example.com/test
+
+go 1.24
+
+replace github.com/aaa/pkg => ../aaa // fork
+
+replace github.com/zzz/pkg => ../zzz // local dev
+`,
+		},
+		{
+			name: "preserves comments on tool directives",
+			input: `module example.com/test
+
+go 1.24
+
+// Development tools
+tool (
+	github.com/zzz/tool // linter
+	github.com/aaa/tool // formatter
+)
+`,
+			want: `module example.com/test
+
+go 1.24
+
+// Development tools
+tool (
+	github.com/aaa/tool // formatter
+	github.com/zzz/tool // linter
+)
+`,
+		},
+		{
+			name: "preserves comments on exclude directives",
+			input: `module example.com/test
+
+go 1.24
+
+// Broken versions
+exclude github.com/bad/pkg v0.0.1 // security issue
+`,
+			want: `module example.com/test
+
+go 1.24
+
+// Broken versions
+exclude github.com/bad/pkg v0.0.1 // security issue
+`,
+		},
+		{
+			name: "preserves comments on retract directives",
+			input: `module example.com/test
+
+go 1.24
+
+// Released by mistake
+retract v1.0.0 // accidental release
+`,
+			want: `module example.com/test
+
+go 1.24
+
+// Released by mistake
+retract v1.0.0 // accidental release
+`,
+		},
+		{
+			name: "preserves comments on godebug directives",
+			input: `module example.com/test
+
+go 1.24
+
+// Compatibility settings
+godebug asynctimerchan=0 // for legacy code
+`,
+			want: `module example.com/test
+
+go 1.24
+
+// Compatibility settings
+godebug asynctimerchan=0 // for legacy code
+`,
+		},
+		{
+			name: "preserves mixed comments throughout file",
+			input: `// Main application module
+module example.com/test
+
+go 1.24
+
+// Core dependencies
+require (
+	github.com/zzz/pkg v1.0.0 // utility lib
+	github.com/aaa/pkg v1.0.0 // core lib
+)
+
+// Indirect deps from tooling
+require golang.org/x/sync v0.5.0 // indirect
+
+// Local overrides for development
+replace github.com/some/pkg => ../local // dev override
+`,
+			want: `// Main application module
+module example.com/test
+
+go 1.24
+
+// Core dependencies
+require (
+	github.com/aaa/pkg v1.0.0 // core lib
+	github.com/zzz/pkg v1.0.0 // utility lib
+)
+
+// Indirect deps from tooling
+require golang.org/x/sync v0.5.0 // indirect
+
+// Local overrides for development
+replace github.com/some/pkg => ../local // dev override
+`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -486,5 +695,48 @@ tool github.com/some/tool
 
 	if string(first) != string(second) {
 		t.Errorf("Format() not idempotent:\n=== FIRST ===\n%s\n=== SECOND ===\n%s\n", first, second)
+	}
+}
+
+func TestFormat_IdempotentWithComments(t *testing.T) {
+	input := `// Main application module
+module example.com/test
+
+go 1.24
+
+toolchain go1.25.6
+
+// Debug settings
+godebug asynctimerchan=0 // legacy compat
+
+// Core dependencies
+require (
+	github.com/aaa/pkg v1.0.0 // important
+	github.com/zzz/pkg v1.0.0 // also important
+)
+
+// Indirect deps
+require golang.org/x/sync v0.5.0 // indirect
+
+// Local development overrides
+replace github.com/old/pkg => github.com/new/pkg v1.0.0 // use fork
+
+// Dev tools
+tool github.com/some/tool // formatter
+`
+	// Format once
+	first, err := Format([]byte(input))
+	if err != nil {
+		t.Fatalf("First Format() error = %v", err)
+	}
+
+	// Format again - should be identical
+	second, err := Format(first)
+	if err != nil {
+		t.Fatalf("Second Format() error = %v", err)
+	}
+
+	if string(first) != string(second) {
+		t.Errorf("Format() with comments not idempotent:\n=== FIRST ===\n%s\n=== SECOND ===\n%s\n", first, second)
 	}
 }

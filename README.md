@@ -1,24 +1,13 @@
 # gomodfmt
 
-An opinionated formatter for `go.mod` files that enforces consistent styling and organization.
+A formatter for `go.mod` files that sorts and organizes directives.
 
-## Philosophy
+## What it does
 
-`gomodfmt` is opinionated. It enforces a specific style:
-
-- **Exactly two require blocks**: direct dependencies first, indirect dependencies second
-- **Alphabetical sorting**: all directives are sorted alphabetically
-- **Consolidated blocks**: scattered single-line directives are grouped into blocks
-- **No endless require blocks**: messy go.mod files with multiple scattered require blocks are cleaned up
-
-## Supported Directives
-
-- `require` - sorted alphabetically, separated into direct/indirect blocks
-- `replace` - sorted alphabetically by old path
-- `exclude` - sorted alphabetically by path, then version
-- `retract` - sorted by version
-- `tool` - sorted alphabetically (Go 1.24+)
-- `godebug` - sorted alphabetically by key (Go 1.21+)
+- Separates require directives into two blocks: direct dependencies first, indirect second
+- Sorts all directives alphabetically
+- Consolidates scattered directives into blocks
+- Preserves all comments (module, block, and inline)
 
 ## Installation
 
@@ -26,92 +15,88 @@ An opinionated formatter for `go.mod` files that enforces consistent styling and
 go install github.com/albertocavalcante/gomodfmt/cmd/gomodfmt@latest
 ```
 
-Requires Go 1.24 or later.
+Requires Go 1.24+.
 
 ## Usage
 
 ```bash
-# Format go.mod and print to stdout
-gomodfmt go.mod
-
-# Format go.mod in place
-gomodfmt -w go.mod
-
-# Show diff of what would change
-gomodfmt -d go.mod
-
-# List files that need formatting
-gomodfmt -l go.mod
-
-# Read from stdin
-cat go.mod | gomodfmt
+gomodfmt go.mod          # print to stdout
+gomodfmt -w go.mod       # write to file
+gomodfmt -d go.mod       # show diff
+gomodfmt -l go.mod       # list files that need formatting
+cat go.mod | gomodfmt    # read from stdin
 ```
 
-## Flags
-
-| Flag | Description |
-|------|-------------|
-| `-w` | Write result to (source) file instead of stdout |
-| `-d` | Display diffs instead of rewriting files |
-| `-l` | List files whose formatting differs from gomodfmt's |
+| Flag | Description                            |
+| ---- | -------------------------------------- |
+| `-w` | Write result to file instead of stdout |
+| `-d` | Display diff                           |
+| `-l` | List files whose formatting differs    |
 
 ## Example
 
-### Before
+**Before:**
 
 ```
 module example.com/myapp
 
 go 1.24
 
-require github.com/zzz/pkg v1.0.0
+// Core library
+require github.com/zzz/pkg v1.0.0 // utils
 
 require (
-	github.com/aaa/pkg v1.0.0
-	golang.org/x/text v0.14.0 // indirect
+    github.com/aaa/pkg v1.0.0
+    golang.org/x/text v0.14.0 // indirect
 )
 
 tool github.com/zzz/tool
 tool github.com/aaa/tool
 
-godebug zipinsecurepath=0
-godebug asynctimerchan=0
-
 require golang.org/x/sync v0.5.0 // indirect
 ```
 
-### After
+**After:**
 
 ```
 module example.com/myapp
 
 go 1.24
 
-godebug (
-	asynctimerchan=0
-	zipinsecurepath=0
+// Core library
+require (
+    github.com/aaa/pkg v1.0.0
+    github.com/zzz/pkg v1.0.0 // utils
 )
 
 require (
-	github.com/aaa/pkg v1.0.0
-	github.com/zzz/pkg v1.0.0
-)
-
-require (
-	golang.org/x/sync v0.5.0 // indirect
-	golang.org/x/text v0.14.0 // indirect
+    golang.org/x/sync v0.5.0 // indirect
+    golang.org/x/text v0.14.0 // indirect
 )
 
 tool (
-	github.com/aaa/tool
-	github.com/zzz/tool
+    github.com/aaa/tool
+    github.com/zzz/tool
 )
 ```
 
-## Limitations
+## Supported directives
 
-- Comments at the top of the file are not preserved (trade-off for block consolidation)
-- Inline comments on directives are preserved
+| Directive | Sorting                                |
+| --------- | -------------------------------------- |
+| `require` | alphabetically, direct before indirect |
+| `replace` | by module path, then version           |
+| `exclude` | by module path, then version           |
+| `retract` | by version                             |
+| `tool`    | alphabetically                         |
+| `godebug` | by key                                 |
+
+## Development
+
+```bash
+go install github.com/evilmartians/lefthook@latest
+lefthook install
+```
 
 ## License
 

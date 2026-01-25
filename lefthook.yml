@@ -1,0 +1,15 @@
+pre-commit:
+  parallel: true
+  commands:
+    gofmt:
+      glob: "*.go"
+      run: gofmt -l -w {staged_files}
+      stage_fixed: true
+    gomodfmt:
+      glob: "go.mod"
+      run: go run ./cmd/gomodfmt -w {staged_files}
+      stage_fixed: true
+    dprint:
+      glob: "*.{yaml,yml,md}"
+      run: dprint fmt {staged_files}
+      stage_fixed: true
