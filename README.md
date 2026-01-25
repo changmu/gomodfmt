@@ -15,6 +15,10 @@ A formatter for `go.mod` files that sorts and organizes directives.
 
 ```bash
 brew install albertocavalcante/tap/gomodfmt
+
+# or tap first, then install by name
+brew tap albertocavalcante/tap
+brew install gomodfmt
 ```
 
 **Go:**
