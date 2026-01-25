@@ -80,6 +80,26 @@ tool (
 )
 ```
 
+## Directive ordering
+
+Output order is fixed:
+
+```
+module
+go / toolchain
+godebug
+require (direct)
+require (indirect)
+replace
+exclude
+retract
+tool
+```
+
+The `tool` directive is placed last intentionally. When reading a go.mod, dependencies are the primary concern—tools are secondary, "for development you'll also need these" information. Keeping them at the end maintains focus on what the module actually needs to run.
+
+> **Note:** Ordering is not configurable. For a single-file formatter, configuration adds complexity without much benefit. This might change if gomodfmt grows to support recursive formatting or `go.work` files, where project-wide consistency would make configuration more valuable.
+
 ## Supported directives
 
 | Directive | Sorting                                |
