@@ -640,6 +640,125 @@ require golang.org/x/sync v0.5.0 // indirect
 replace github.com/some/pkg => ../local // dev override
 `,
 		},
+
+		// ==================== BEFORE-LINE COMMENT TESTS (regression for silent comment loss) ====================
+		{
+			// Comments attached to a specific require line follow that line
+			// when it is re-sorted. Here foo/bar sorts after baz/qux.
+			name: "preserves before-line comment inside require block",
+			input: `module example.com/test
+
+go 1.24
+
+require (
+	// TODO: pin this version once v2 is stable
+	github.com/foo/bar v1.0.0
+	github.com/baz/qux v1.5.0
+)
+`,
+			want: `module example.com/test
+
+go 1.24
+
+require (
+	github.com/baz/qux v1.5.0
+	// TODO: pin this version once v2 is stable
+	github.com/foo/bar v1.0.0
+)
+`,
+		},
+		{
+			name: "preserves before-line comment inside indirect require block",
+			input: `module example.com/test
+
+go 1.24
+
+require (
+	// pulled in by foo/bar - do not remove
+	golang.org/x/sync v0.5.0 // indirect
+	golang.org/x/text v0.14.0 // indirect
+)
+`,
+			want: `module example.com/test
+
+go 1.24
+
+require (
+	// pulled in by foo/bar - do not remove
+	golang.org/x/sync v0.5.0 // indirect
+	golang.org/x/text v0.14.0 // indirect
+)
+`,
+		},
+		{
+			name: "preserves before-line comment inside tool block",
+			input: `module example.com/test
+
+go 1.24
+
+tool (
+	// project-wide linter
+	github.com/aaa/tool
+	github.com/zzz/tool
+)
+`,
+			want: `module example.com/test
+
+go 1.24
+
+tool (
+	// project-wide linter
+	github.com/aaa/tool
+	github.com/zzz/tool
+)
+`,
+		},
+		{
+			name: "preserves before-line comment inside exclude block",
+			input: `module example.com/test
+
+go 1.24
+
+exclude (
+	// CVE-2024-1234
+	github.com/aaa/pkg v0.9.0
+	github.com/aaa/pkg v1.0.0
+)
+`,
+			want: `module example.com/test
+
+go 1.24
+
+exclude (
+	// CVE-2024-1234
+	github.com/aaa/pkg v0.9.0
+	github.com/aaa/pkg v1.0.0
+)
+`,
+		},
+		{
+			name: "preserves before-line comment inside godebug block",
+			input: `module example.com/test
+
+go 1.24
+
+godebug (
+	// needed for legacy timer behavior
+	asynctimerchan=0
+	zipinsecurepath=0
+)
+`,
+			want: `module example.com/test
+
+go 1.24
+
+godebug (
+	// needed for legacy timer behavior
+	asynctimerchan=0
+	zipinsecurepath=0
+)
+`,
+		},
 	}
 
 	for _, tt := range tests {

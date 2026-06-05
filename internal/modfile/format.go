@@ -232,14 +232,30 @@ func extractComments(f *modfile.File) *commentData {
 		}
 	}
 
-	// Extract individual line suffix comments from require entries
+	// Build set of syntax lines that live inside a LineBlock.
+	// For block-internal lines, before/after represent per-line comments and
+	// must be preserved. For top-level single-line directives, before/after
+	// represent block-level comments and are already captured via
+	// firstXxxBefore — re-storing them here would duplicate the comment in
+	// the rendered output.
+	inBlock := make(map[*modfile.Line]bool)
+	for _, stmt := range f.Syntax.Stmt {
+		if block, ok := stmt.(*modfile.LineBlock); ok {
+			for _, line := range block.Line {
+				inBlock[line] = true
+			}
+		}
+	}
+
+	// Extract individual line comments from require entries
 	for _, r := range f.Require {
 		if r.Syntax != nil {
-			c.requireComments[r.Mod.Path] = lineComments{
-				before: r.Syntax.Before,
-				suffix: r.Syntax.Suffix,
-				after:  r.Syntax.After,
+			lc := lineComments{suffix: r.Syntax.Suffix}
+			if inBlock[r.Syntax] {
+				lc.before = r.Syntax.Before
+				lc.after = r.Syntax.After
 			}
+			c.requireComments[r.Mod.Path] = lc
 		}
 	}
 
@@ -299,61 +315,82 @@ func extractComments(f *modfile.File) *commentData {
 		}
 	}
 
-	// Extract individual line suffix comments
+	// Extract individual line comments. Apply inBlock gate same as require:
+	// only block-internal lines have meaningful before/after comments.
 	for _, r := range f.Replace {
 		if r.Syntax != nil {
 			key := r.Old.Path + "|" + r.Old.Version
-			c.replaceComments[key] = lineComments{
-				before: r.Syntax.Before,
-				suffix: r.Syntax.Suffix,
-				after:  r.Syntax.After,
+			lc := lineComments{suffix: r.Syntax.Suffix}
+			if inBlock[r.Syntax] {
+				lc.before = r.Syntax.Before
+				lc.after = r.Syntax.After
 			}
+			c.replaceComments[key] = lc
 		}
 	}
 
 	for _, e := range f.Exclude {
 		if e.Syntax != nil {
 			key := e.Mod.Path + "|" + e.Mod.Version
-			c.excludeComments[key] = lineComments{
-				before: e.Syntax.Before,
-				suffix: e.Syntax.Suffix,
-				after:  e.Syntax.After,
+			lc := lineComments{suffix: e.Syntax.Suffix}
+			if inBlock[e.Syntax] {
+				lc.before = e.Syntax.Before
+				lc.after = e.Syntax.After
 			}
+			c.excludeComments[key] = lc
 		}
 	}
 
 	for _, r := range f.Retract {
 		if r.Syntax != nil {
 			key := r.Low + "|" + r.High
-			c.retractComments[key] = lineComments{
-				before: r.Syntax.Before,
-				suffix: r.Syntax.Suffix,
-				after:  r.Syntax.After,
+			lc := lineComments{suffix: r.Syntax.Suffix}
+			if inBlock[r.Syntax] {
+				lc.before = r.Syntax.Before
+				lc.after = r.Syntax.After
 			}
+			c.retractComments[key] = lc
 		}
 	}
 
 	for _, t := range f.Tool {
 		if t.Syntax != nil {
-			c.toolComments[t.Path] = lineComments{
-				before: t.Syntax.Before,
-				suffix: t.Syntax.Suffix,
-				after:  t.Syntax.After,
+			lc := lineComments{suffix: t.Syntax.Suffix}
+			if inBlock[t.Syntax] {
+				lc.before = t.Syntax.Before
+				lc.after = t.Syntax.After
 			}
+			c.toolComments[t.Path] = lc
 		}
 	}
 
 	for _, g := range f.Godebug {
 		if g.Syntax != nil {
-			c.godebugComments[g.Key] = lineComments{
-				before: g.Syntax.Before,
-				suffix: g.Syntax.Suffix,
-				after:  g.Syntax.After,
+			lc := lineComments{suffix: g.Syntax.Suffix}
+			if inBlock[g.Syntax] {
+				lc.before = g.Syntax.Before
+				lc.after = g.Syntax.After
 			}
+			c.godebugComments[g.Key] = lc
 		}
 	}
 
 	return c
+}
+
+// applyLineComments restores before/suffix/after comments onto a Line.
+// before/after are only meaningful for block-internal lines; extractComments
+// gates them via the inBlock set.
+func applyLineComments(line *modfile.Line, lc lineComments) {
+	if len(lc.before) > 0 {
+		line.Before = lc.before
+	}
+	if len(lc.suffix) > 0 {
+		line.Suffix = lc.suffix
+	}
+	if len(lc.after) > 0 {
+		line.After = lc.after
+	}
 }
 
 func applyRequireComments(f *modfile.File, c *commentData) {
@@ -361,10 +398,10 @@ func applyRequireComments(f *modfile.File, c *commentData) {
 		return
 	}
 
-	// Apply individual suffix comments
+	// Apply individual line comments (before, suffix, after)
 	for _, r := range f.Require {
 		if lc, ok := c.requireComments[r.Mod.Path]; ok {
-			r.Syntax.Suffix = lc.suffix
+			applyLineComments(r.Syntax, lc)
 		}
 	}
 
@@ -405,11 +442,11 @@ func applyReplaceComments(f *modfile.File, c *commentData) {
 	if len(f.Replace) == 0 {
 		return
 	}
-	// Apply individual suffix comments
+	// Apply individual line comments (before, suffix, after)
 	for _, r := range f.Replace {
 		key := r.Old.Path + "|" + r.Old.Version
 		if lc, ok := c.replaceComments[key]; ok {
-			r.Syntax.Suffix = lc.suffix
+			applyLineComments(r.Syntax, lc)
 		}
 	}
 	// Apply block-level comment to first replace statement/block
@@ -422,11 +459,11 @@ func applyExcludeComments(f *modfile.File, c *commentData) {
 	if len(f.Exclude) == 0 {
 		return
 	}
-	// Apply individual suffix comments
+	// Apply individual line comments (before, suffix, after)
 	for _, e := range f.Exclude {
 		key := e.Mod.Path + "|" + e.Mod.Version
 		if lc, ok := c.excludeComments[key]; ok {
-			e.Syntax.Suffix = lc.suffix
+			applyLineComments(e.Syntax, lc)
 		}
 	}
 	// Apply block-level comment
@@ -438,20 +475,19 @@ func applyExcludeComments(f *modfile.File, c *commentData) {
 func applyRetractComments(f *modfile.File, c *commentData) {
 	// AddRetract adds to syntax tree but doesn't populate f.Retract slice.
 	// We need to find retract lines directly in the syntax tree and apply comments.
+	// For top-level single-line retracts, suppress per-line before/after since
+	// those are block-level (already applied via firstRetractBlockBefore).
 	firstRetractDone := false
 	for _, stmt := range f.Syntax.Stmt {
 		switch s := stmt.(type) {
 		case *modfile.Line:
 			if len(s.Token) >= 2 && s.Token[0] == "retract" {
-				// Extract version(s) from tokens to build key
-				// For single version: retract v1.0.0 -> Low=v1.0.0, High=v1.0.0
-				// For range: retract [v1.0.0, v2.0.0] -> need to parse differently
 				low, high := parseRetractVersion(s.Token[1:])
 				key := low + "|" + high
 				if lc, ok := c.retractComments[key]; ok {
+					// Top-level Line: only restore suffix
 					s.Suffix = lc.suffix
 				}
-				// Apply block-level comment to first retract
 				if !firstRetractDone && len(c.firstRetractBlockBefore) > 0 {
 					s.Before = c.firstRetractBlockBefore
 					firstRetractDone = true
@@ -459,17 +495,16 @@ func applyRetractComments(f *modfile.File, c *commentData) {
 			}
 		case *modfile.LineBlock:
 			if len(s.Token) > 0 && s.Token[0] == "retract" {
-				// Apply block-level comment
 				if !firstRetractDone && len(c.firstRetractBlockBefore) > 0 {
 					s.Before = c.firstRetractBlockBefore
 					firstRetractDone = true
 				}
-				// Apply individual line comments
+				// Block-internal lines: restore full (before, suffix, after)
 				for _, line := range s.Line {
 					low, high := parseRetractVersion(line.Token)
 					key := low + "|" + high
 					if lc, ok := c.retractComments[key]; ok {
-						line.Suffix = lc.suffix
+						applyLineComments(line, lc)
 					}
 				}
 			}
@@ -520,10 +555,10 @@ func applyToolComments(f *modfile.File, c *commentData) {
 	if len(f.Tool) == 0 {
 		return
 	}
-	// Apply individual suffix comments
+	// Apply individual line comments (before, suffix, after)
 	for _, t := range f.Tool {
 		if lc, ok := c.toolComments[t.Path]; ok {
-			t.Syntax.Suffix = lc.suffix
+			applyLineComments(t.Syntax, lc)
 		}
 	}
 	// Apply block-level comment
@@ -536,10 +571,10 @@ func applyGodebugComments(f *modfile.File, c *commentData) {
 	if len(f.Godebug) == 0 {
 		return
 	}
-	// Apply individual suffix comments
+	// Apply individual line comments (before, suffix, after)
 	for _, g := range f.Godebug {
 		if lc, ok := c.godebugComments[g.Key]; ok {
-			g.Syntax.Suffix = lc.suffix
+			applyLineComments(g.Syntax, lc)
 		}
 	}
 	// Apply block-level comment
