@@ -67,17 +67,17 @@ func Format(data []byte) ([]byte, error) {
 	newFile.SetRequireSeparateIndirect(mods)
 	applyRequireComments(newFile, comments)
 
-	// Add replaces (sorted) with comments
+	// Add replaces (sorted) consolidated into a single block with comments.
+	// modfile.AddReplace would emit one Line per (path, version) pair; we want
+	// all replaces under one `replace ( ... )` block. Cleanup() will fold the
+	// block back into a single Line when it contains only one entry.
 	sort.Slice(f.Replace, func(i, j int) bool {
 		if f.Replace[i].Old.Path != f.Replace[j].Old.Path {
 			return f.Replace[i].Old.Path < f.Replace[j].Old.Path
 		}
 		return f.Replace[i].Old.Version < f.Replace[j].Old.Version
 	})
-	for _, r := range f.Replace {
-		newFile.AddReplace(r.Old.Path, r.Old.Version, r.New.Path, r.New.Version)
-	}
-	applyReplaceComments(newFile, comments)
+	addReplaceBlock(newFile, f.Replace, comments)
 
 	// Add excludes (sorted) with comments
 	sort.Slice(f.Exclude, func(i, j int) bool {
@@ -438,21 +438,45 @@ func applyRequireComments(f *modfile.File, c *commentData) {
 	}
 }
 
-func applyReplaceComments(f *modfile.File, c *commentData) {
-	if len(f.Replace) == 0 {
+// addReplaceBlock appends all replaces as a single `replace ( ... )` block to
+// newFile, restoring per-line and block-level comments. Cleanup() will fold a
+// one-entry block back into a single Line, so this also handles the singleton
+// case correctly.
+func addReplaceBlock(newFile *modfile.File, replaces []*modfile.Replace, c *commentData) {
+	if len(replaces) == 0 {
 		return
 	}
-	// Apply individual line comments (before, suffix, after)
-	for _, r := range f.Replace {
+
+	block := &modfile.LineBlock{Token: []string{"replace"}}
+	if len(c.firstReplaceBlockBefore) > 0 {
+		block.Before = c.firstReplaceBlockBefore
+	}
+
+	for _, r := range replaces {
+		tokens := []string{modfile.AutoQuote(r.Old.Path)}
+		if r.Old.Version != "" {
+			tokens = append(tokens, r.Old.Version)
+		}
+		tokens = append(tokens, "=>", modfile.AutoQuote(r.New.Path))
+		if r.New.Version != "" {
+			tokens = append(tokens, r.New.Version)
+		}
+
+		line := &modfile.Line{Token: tokens, InBlock: true}
 		key := r.Old.Path + "|" + r.Old.Version
 		if lc, ok := c.replaceComments[key]; ok {
-			applyLineComments(r.Syntax, lc)
+			applyLineComments(line, lc)
 		}
+		block.Line = append(block.Line, line)
+
+		newFile.Replace = append(newFile.Replace, &modfile.Replace{
+			Old:    module.Version{Path: r.Old.Path, Version: r.Old.Version},
+			New:    module.Version{Path: r.New.Path, Version: r.New.Version},
+			Syntax: line,
+		})
 	}
-	// Apply block-level comment to first replace statement/block
-	if len(c.firstReplaceBlockBefore) > 0 {
-		applyBlockCommentToDirective(f.Syntax, "replace", c.firstReplaceBlockBefore)
-	}
+
+	newFile.Syntax.Stmt = append(newFile.Syntax.Stmt, block)
 }
 
 func applyExcludeComments(f *modfile.File, c *commentData) {

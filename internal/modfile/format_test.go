@@ -255,11 +255,11 @@ replace (
 
 go 1.24
 
-replace github.com/aaa/pkg => ../aaa
-
-replace github.com/mmm/pkg => ../mmm
-
-replace github.com/zzz/pkg => ../zzz
+replace (
+	github.com/aaa/pkg => ../aaa
+	github.com/mmm/pkg => ../mmm
+	github.com/zzz/pkg => ../zzz
+)
 `,
 		},
 		{
@@ -277,9 +277,10 @@ replace (
 
 go 1.24
 
-replace github.com/aaa/pkg v0.9.0 => github.com/fork/aaa v0.9.1
-
-replace github.com/zzz/pkg v1.0.0 => github.com/fork/zzz v1.0.1
+replace (
+	github.com/aaa/pkg v0.9.0 => github.com/fork/aaa v0.9.1
+	github.com/zzz/pkg v1.0.0 => github.com/fork/zzz v1.0.1
+)
 `,
 		},
 
@@ -384,9 +385,10 @@ require (
 	golang.org/x/text v0.14.0 // indirect
 )
 
-replace github.com/aaa/pkg => ../aaa
-
-replace github.com/zzz/pkg => ../zzz
+replace (
+	github.com/aaa/pkg => ../aaa
+	github.com/zzz/pkg => ../zzz
+)
 
 exclude github.com/bad/pkg v0.0.1
 
@@ -510,6 +512,54 @@ replace github.com/some/pkg => ../local-pkg
 `,
 		},
 		{
+			// Block-level comment before scattered single-line replace directives
+			// should attach to the consolidated replace block.
+			name: "consolidates scattered replace into single block with block comment",
+			input: `module example.com/test
+
+go 1.24
+
+// Local overrides
+replace github.com/zzz/pkg => ../zzz
+replace github.com/aaa/pkg => ../aaa
+`,
+			want: `module example.com/test
+
+go 1.24
+
+// Local overrides
+replace (
+	github.com/aaa/pkg => ../aaa
+	github.com/zzz/pkg => ../zzz
+)
+`,
+		},
+		{
+			// Block-level comment must stay attached to the replace block
+			// itself, not to whatever line happens to sort first inside it.
+			name: "block-level replace comment stays on block after sort",
+			input: `module example.com/test
+
+go 1.24
+
+// Local overrides
+replace (
+	github.com/zzz/pkg => ../zzz
+	github.com/aaa/pkg => ../aaa
+)
+`,
+			want: `module example.com/test
+
+go 1.24
+
+// Local overrides
+replace (
+	github.com/aaa/pkg => ../aaa
+	github.com/zzz/pkg => ../zzz
+)
+`,
+		},
+		{
 			name: "preserves inline comments on replace directives",
 			input: `module example.com/test
 
@@ -524,9 +574,10 @@ replace (
 
 go 1.24
 
-replace github.com/aaa/pkg => ../aaa // fork
-
-replace github.com/zzz/pkg => ../zzz // local dev
+replace (
+	github.com/aaa/pkg => ../aaa // fork
+	github.com/zzz/pkg => ../zzz // local dev
+)
 `,
 		},
 		{
@@ -838,7 +889,10 @@ require (
 require golang.org/x/sync v0.5.0 // indirect
 
 // Local development overrides
-replace github.com/old/pkg => github.com/new/pkg v1.0.0 // use fork
+replace (
+	github.com/old/pkg => github.com/new/pkg v1.0.0 // use fork
+	github.com/pinned/pkg v1.2.3 => ../local-pinned // pinned version override
+)
 
 // Dev tools
 tool github.com/some/tool // formatter

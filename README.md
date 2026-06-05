@@ -63,6 +63,9 @@ require (
 tool github.com/zzz/tool
 tool github.com/aaa/tool
 
+replace github.com/zzz/pkg => ../zzz
+replace github.com/aaa/pkg => ../aaa
+
 require golang.org/x/sync v0.5.0 // indirect
 ```
 
@@ -82,6 +85,11 @@ require (
 require (
     golang.org/x/sync v0.5.0 // indirect
     golang.org/x/text v0.14.0 // indirect
+)
+
+replace (
+    github.com/aaa/pkg => ../aaa
+    github.com/zzz/pkg => ../zzz
 )
 
 tool (
