@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/albertocavalcante/gomodfmt/internal/modfile"
 )
@@ -93,9 +94,52 @@ func processFile(path string) error {
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(path, formatted, info.Mode())
+		return writeFileAtomic(path, formatted, info.Mode())
 	}
 
 	os.Stdout.Write(formatted)
+	return nil
+}
+
+// writeFileAtomic writes data to path atomically via "create temp in same dir
+// + fsync + rename". This guarantees that an interrupted run (SIGKILL, panic,
+// power loss) never leaves the target file truncated or partially written:
+// either the rename happened (new content) or it didn't (original content).
+//
+// The temp file lives in the same directory as path so the rename is a single
+// filesystem operation. Cross-filesystem renames fall back to copy+delete,
+// which is not atomic.
+func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".gomodfmt-*")
+	if err != nil {
+		return fmt.Errorf("create temp: %w", err)
+	}
+	tmpName := tmp.Name()
+	// Best-effort cleanup if anything below fails before rename.
+	defer func() {
+		if _, statErr := os.Stat(tmpName); statErr == nil {
+			_ = os.Remove(tmpName)
+		}
+	}()
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return fmt.Errorf("write temp: %w", err)
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		tmp.Close()
+		return fmt.Errorf("chmod temp: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return fmt.Errorf("sync temp: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp: %w", err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return fmt.Errorf("rename: %w", err)
+	}
 	return nil
 }
