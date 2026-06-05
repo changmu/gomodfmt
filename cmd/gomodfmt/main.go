@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/albertocavalcante/gomodfmt/internal/modfile"
+	"github.com/changmu/gomodfmt/internal/modfile"
 )
 
 var (

@@ -1,4 +1,4 @@
-module github.com/albertocavalcante/gomodfmt
+module github.com/changmu/gomodfmt
 
 go 1.24.0
 

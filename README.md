@@ -24,7 +24,7 @@ brew install gomodfmt
 **Go:**
 
 ```bash
-go install github.com/albertocavalcante/gomodfmt/cmd/gomodfmt@latest
+go install github.com/changmu/gomodfmt/cmd/gomodfmt@latest
 ```
 
 ## Usage
