@@ -158,6 +158,8 @@ type commentData struct {
 	firstToolBlockBefore []modfile.Comment
 	// firstGodebugBlockBefore stores comments before the first godebug
 	firstGodebugBlockBefore []modfile.Comment
+	// replaceRParenBefore stores comments before the closing ) of replace blocks
+	replaceRParenBefore []modfile.Comment
 }
 
 type lineComments struct {
@@ -286,6 +288,9 @@ func extractComments(f *modfile.File) *commentData {
 						c.firstGodebugBlockBefore = s.Before
 					}
 				}
+			}
+			if len(s.Token) > 0 && s.Token[0] == "replace" && len(s.RParen.Before) > 0 {
+				c.replaceRParenBefore = append(c.replaceRParenBefore, s.RParen.Before...)
 			}
 		case *modfile.Line:
 			if len(s.Token) > 0 && len(s.Before) > 0 {
@@ -473,6 +478,13 @@ func addReplaceBlock(newFile *modfile.File, replaces []*modfile.Replace, c *comm
 			Old:    module.Version{Path: r.Old.Path, Version: r.Old.Version},
 			New:    module.Version{Path: r.New.Path, Version: r.New.Version},
 			Syntax: line,
+		})
+	}
+
+	for _, com := range c.replaceRParenBefore {
+		block.Line = append(block.Line, &modfile.Line{
+			Token:   []string{com.Token},
+			InBlock: true,
 		})
 	}
 

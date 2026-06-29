@@ -788,6 +788,50 @@ exclude (
 `,
 		},
 		{
+			name: "preserves trailing comment-only line inside replace block",
+			input: `module example.com/test
+
+go 1.24
+
+replace (
+	github.com/mitchellh/mapstructure => gitlab.futunn.com/infra/fork/mapstructure v0.0.3
+	// gitlab.futunn.com/go_base_components/common_util => ../common_util
+)
+`,
+			want: `module example.com/test
+
+go 1.24
+
+replace (
+	github.com/mitchellh/mapstructure => gitlab.futunn.com/infra/fork/mapstructure v0.0.3
+	// gitlab.futunn.com/go_base_components/common_util => ../common_util
+)
+`,
+		},
+		{
+			name: "preserves multiple trailing comment-only lines inside replace block",
+			input: `module example.com/test
+
+go 1.24
+
+replace (
+	github.com/aaa/pkg => ../aaa
+	// github.com/bbb/pkg => ../bbb
+	// github.com/ccc/pkg => ../ccc
+)
+`,
+			want: `module example.com/test
+
+go 1.24
+
+replace (
+	github.com/aaa/pkg => ../aaa
+	// github.com/bbb/pkg => ../bbb
+	// github.com/ccc/pkg => ../ccc
+)
+`,
+		},
+		{
 			name: "preserves before-line comment inside godebug block",
 			input: `module example.com/test
 
@@ -911,5 +955,30 @@ tool github.com/some/tool // formatter
 
 	if string(first) != string(second) {
 		t.Errorf("Format() with comments not idempotent:\n=== FIRST ===\n%s\n=== SECOND ===\n%s\n", first, second)
+	}
+}
+
+func TestFormat_IdempotentWithRParenComments(t *testing.T) {
+	input := `module example.com/test
+
+go 1.24
+
+replace (
+	github.com/mitchellh/mapstructure => gitlab.futunn.com/infra/fork/mapstructure v0.0.3
+	// gitlab.futunn.com/go_base_components/common_util => ../common_util
+)
+`
+	first, err := Format([]byte(input))
+	if err != nil {
+		t.Fatalf("First Format() error = %v", err)
+	}
+
+	second, err := Format(first)
+	if err != nil {
+		t.Fatalf("Second Format() error = %v", err)
+	}
+
+	if string(first) != string(second) {
+		t.Errorf("Format() with RParen comments not idempotent:\n=== FIRST ===\n%s\n=== SECOND ===\n%s\n", first, second)
 	}
 }
